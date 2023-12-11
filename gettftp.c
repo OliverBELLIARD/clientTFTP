@@ -16,9 +16,15 @@
  */
 int main(int argc, char *argv[])
 {
-    char* host = argv[1];
-    char* port = argv[2];
-    char* fileName = argv[3];
+    if (argc < 4) {
+        // Error management
+        fprintf(stderr, "Usage: %s host port filename\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    char *host = argv[1];
+    char *port = argv[2];
+    char *fileName = argv[3];
 
     struct addrinfo hints;
     struct addrinfo *result, *rp;
@@ -26,12 +32,6 @@ int main(int argc, char *argv[])
     size_t len;
     ssize_t nread;
     char buf[BUF_SIZE];
-
-    if (argc < 3) {
-        // Error management
-        fprintf(stderr, "Usage: %s host port filename\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
 
     // Obtain address(es) matching host/port
 
@@ -59,10 +59,11 @@ int main(int argc, char *argv[])
         if (sfd == -1)
             continue;
 
-        printf("ai_family: %d\t| ai_socktype: %d\t| ai_protocol: %d\n",
-               rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-        if (connect(sfd, rp->ai_addr, rp->ai_addrlen) != -1)
+        if (connect(sfd, rp->ai_addr, rp->ai_addrlen) != -1) {
+            if (DEBUG) printf("Connection using this socket established:\nsai_family: %d\t| ai_socktype: %d\t| ai_protocol: %d\n",
+                              rp->ai_family, rp->ai_socktype, rp->ai_protocol);
             break; // Success: no need to keep trying
+        }
 
         close(sfd);
     }
@@ -76,9 +77,7 @@ int main(int argc, char *argv[])
 
     freeaddrinfo(result);           // No longer needed
 
-    // Send remaining command-line arguments as separate datagrams,
-    // and read responses from server
-
+    /*
     for (j = 3; j < argc; j++) {
         len = strlen(argv[j]) + 1;
         // +1 for terminating null byte
@@ -104,6 +103,52 @@ int main(int argc, char *argv[])
 
         printf("Received %ld bytes: %s\n", (long) nread, buf);
     }
+     */
+
+    if (DEBUG) print("Trying to send filename to server\n");
+    // Send the filename to the server
+    if (write(sfd, fileName, strlen(fileName) + 1) != strlen(fileName) + 1) {
+        // Error management
+        fprintf(stderr, "partial/failed write\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Receive the file content from the server
+    FILE *file = fopen(fileName, "w");
+    if (file == NULL) {
+        // Error management
+        perror("fopen");
+        exit(EXIT_FAILURE);
+    }
+
+    if (DEBUG) print("Attempt of reception of requested file from server\n");
+    while ((nread = read(sfd, buf, BUF_SIZE)) > 0) {
+        if (fwrite(buf, sizeof(char), nread, file) != nread) {
+            // Error management
+            perror("fwrite");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    if (nread == -1) {
+        perror("read");
+        exit(EXIT_FAILURE);
+    }
+
+    if (DEBUG) print("File successfully downloaded to current directory\n");
+    fclose(file);
 
     exit(EXIT_SUCCESS);
+}
+
+/**
+ * @brief Prints the String passed using the write function.
+ * Has error management.
+ * @param string string to print.
+ */
+void print(char *string) {
+    if (write(STDOUT_FILENO, string, strlen(string)) == -1) { // Error management
+        perror("write");
+        exit(EXIT_FAILURE);
+    }
 }

@@ -14,5 +14,8 @@
 #include <string.h>
 
 #define BUF_SIZE 500
+#define DEBUG 1
+
+void print(char *);
 
 #endif //CLIENTTFTP_GETTFTP_H

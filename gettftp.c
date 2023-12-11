@@ -10,6 +10,7 @@
 
 /**
  * @brief Downloads a requested file from a specified host through arguments
+ * User guide for getaddrinfo in official manual at >>> man getaddrinfo
  * @param argc
  * @param argv
  * @return int returns 0 if successfully terminated
@@ -34,12 +35,11 @@ int main(int argc, char *argv[])
     char buf[BUF_SIZE];
 
     // Obtain address(es) matching host/port
-
     memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_UNSPEC;    // Allow IPv4 or IPv6
+    hints.ai_family = AF_INET;    // Allow IPv4
     hints.ai_socktype = SOCK_DGRAM; // Datagram socket
     hints.ai_flags = 0;
-    hints.ai_protocol = 0;          // Any protocol
+    hints.ai_protocol = IPPROTO_UDP;          // Any protocol
 
     s = getaddrinfo(host, port, &hints, &result);
     if (s != 0) {
@@ -52,7 +52,6 @@ int main(int argc, char *argv[])
     // Try each address until we successfully connect(2).
     // If socket(2) (or connect(2)) fails, we (close the socket and)
     // try the next address.
-
     for (rp = result; rp != NULL; rp = rp->ai_next) {
         sfd = socket(rp->ai_family, rp->ai_socktype,
                      rp->ai_protocol);
@@ -75,39 +74,11 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    freeaddrinfo(result);           // No longer needed
+    freeaddrinfo(result); // No longer needed
 
-    /*
-    for (j = 3; j < argc; j++) {
-        len = strlen(argv[j]) + 1;
-        // +1 for terminating null byte
-
-        if (len + 1 > BUF_SIZE) {
-            // Error management
-            fprintf(stderr,
-                    "Ignoring long message in argument %d\n", j);
-            continue;
-        }
-
-        if (write(sfd, argv[j], len) != len) {
-            // Error management
-            fprintf(stderr, "partial/failed write\n");
-            exit(EXIT_FAILURE);
-        }
-
-        nread = read(sfd, buf, BUF_SIZE);
-        if (nread == -1) {
-            perror("read");
-            exit(EXIT_FAILURE);
-        }
-
-        printf("Received %ld bytes: %s\n", (long) nread, buf);
-    }
-     */
-
-    if (DEBUG) print("Trying to send filename to server\n");
-    // Send the filename to the server
-    if (write(sfd, fileName, strlen(fileName) + 1) != strlen(fileName) + 1) {
+    if (DEBUG) print("Attempt to send filename to server\n");
+    // Send the file to the server through an RRQ request
+    if (write(sfd, getrrq(fileName), strlen(getrrq(fileName)) + 1) != strlen(fileName) + 1) {
         // Error management
         fprintf(stderr, "partial/failed write\n");
         exit(EXIT_FAILURE);
@@ -121,8 +92,9 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    if (DEBUG) print("Attempt of reception of requested file from server\n");
+    if (DEBUG) print("Attempt to write of requested file from server in client directory\n");
     while ((nread = read(sfd, buf, BUF_SIZE)) > 0) {
+        if (DEBUG) print("Receiving file content from server...\n");
         if (fwrite(buf, sizeof(char), nread, file) != nread) {
             // Error management
             perror("fwrite");
@@ -131,6 +103,7 @@ int main(int argc, char *argv[])
     }
 
     if (nread == -1) {
+        // Error management
         perror("read");
         exit(EXIT_FAILURE);
     }
@@ -151,4 +124,23 @@ void print(char *string) {
         perror("write");
         exit(EXIT_FAILURE);
     }
+}
+
+/**
+ * @brief Builds an RRQ request to request a specified file
+ * RRQ request packet composition:
+ * 2 bytes     string    1 byte     string   1 byte
+ *  ------------------------------------------------
+ * | Opcode |  Filename  |   0  |    Mode    |   0  |
+ *  ------------------------------------------------
+ * @param filename file to request
+ * @return RRQ request
+ */
+char * getrrq(char * filename) {
+    char request[sizeof (RRQ_OPCODE_1) + sizeof (filename) + sizeof (RRQ_MODE) + 2];
+
+    sprintf(request, "%s%s\0%s\0", RRQ_OPCODE_1, filename, RRQ_MODE);
+    print(request);
+
+    return request;
 }

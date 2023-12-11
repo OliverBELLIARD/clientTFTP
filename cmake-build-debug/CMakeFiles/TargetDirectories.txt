@@ -1,0 +1,3 @@
+/home/oliver/Documents/Synthese_INFO/clientTFTP/cmake-build-debug/CMakeFiles/clientTFTP.dir
+/home/oliver/Documents/Synthese_INFO/clientTFTP/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/oliver/Documents/Synthese_INFO/clientTFTP/cmake-build-debug/CMakeFiles/rebuild_cache.dir

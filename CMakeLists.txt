@@ -3,4 +3,8 @@ project(clientTFTP C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(clientTFTP main.c)
+add_executable(clientTFTP
+        gettftp.h
+        gettftp.c
+        puttftp.h
+        puttftp.c)

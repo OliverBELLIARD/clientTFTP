@@ -98,23 +98,27 @@ int main(int argc, char *argv[]) {
 
     // Receive the initial response from the server
     char response[BUF_SIZE];
-    struct sockaddr_storage client_addr;
-    socklen_t client_addr_len = sizeof(client_addr);
+    struct sockaddr peer_addr;
+    socklen_t peer_addr_len = sizeof(peer_addr);
 
     if (DEBUG) print("Receiving initial response from server\n");
-    ssize_t nrecv = recvfrom(sfd, response, BUF_SIZE, 0, (struct sockaddr*)&client_addr, &client_addr_len);
+
+    while (nread == BUF_SIZE) {
+
+    }
+    ssize_t nrecv = recvfrom(sfd, response, BUF_SIZE, 0, &peer_addr, &peer_addr_len);
     if (DEBUG) {
         print("Initial response received from server\n");
         printf("Bytes received: %zd\n", nrecv);
-    }
 
-    if (nrecv < 0) {
-        // Error management
-        perror("read");
-        exit(EXIT_FAILURE);
-    }
-    if (nrecv == 0) {
-        if (DEBUG) print("Server closed the connection\n");
+        if (nrecv < 0) {
+            // Error management
+            perror("read");
+            exit(EXIT_FAILURE);
+        }
+        if (nrecv == 0) {
+            if (DEBUG) print("Server closed the connection\n");
+        }
     }
 
     if (DEBUG) print("Checking received response\n");
@@ -148,7 +152,8 @@ int main(int argc, char *argv[]) {
 
 
     if (DEBUG) print("File successfully downloaded to the current directory\n");
-    fclose(file); // Close the file descriptor
+    free(rrq_request);  // We free the allocated memory
+    fclose(file);   // Close the file descriptor
     close(sfd);     // Close the socket
 
     exit(EXIT_SUCCESS);
@@ -178,23 +183,23 @@ void print(const char *message) {
  */
 char *buildRRQRequest(const char *filename) {
     // The size of the request is determined by the length of the opcode, filename, mode, option, and null terminators
-    size_t request_size = strlen(TFTP_OPCODE_RRQ) + strlen(filename) + strlen(TFTP_OCTET_MODE) + strlen("tftp2") + 4;
+    size_t request_size = 2 + strlen(filename) + strlen(TFTP_OCTET_MODE) + strlen("tftp2") + 4;
 
     char *request = (char *)malloc(request_size);
     if (request == NULL) {
+        // Error handling
         perror("malloc");
         exit(EXIT_FAILURE);
     }
 
     sprintf(request, "%s%s0%s0%s0", TFTP_OPCODE_RRQ, filename, TFTP_OCTET_MODE, "tftp2");
 
-    // Set opcode values
-    request[0] = '0';
-    request[1] = '1';
+    request[0] = 0;
+    request[1] = 1;
+    strcpy(&(request[1]),filename);
+    strcpy(&(request[1 + strlen(filename)]),filename);
+    request[2 + strlen(filename)] = 0;
 
-    // Null terminate the filename, mode, and option
-    request[strlen(TFTP_OPCODE_RRQ) + strlen(filename)] = 0;
-    request[strlen(TFTP_OPCODE_RRQ) + strlen(filename) + strlen(TFTP_OCTET_MODE)] = 0;
     request[request_size - 1] = 0;
 
     return request;

@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include <string.h>
 
-#define BUF_SIZE 1024
+#define BUF_SIZE 516
 
 // Enable/disable debugging statements
 #define DEBUG 1

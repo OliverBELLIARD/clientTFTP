@@ -14,13 +14,15 @@
 #include <string.h>
 
 #define BUF_SIZE 1024
+
+// Enable/disable debugging statements
 #define DEBUG 1
 
-#define RRQ_MODE "octet"
-#define RRQ_OPCODE_1 "01"
-#define RRQ_OPCODE_2 "10"
+#define TFTP_OCTET_MODE "octet"
+#define TFTP_OPCODE_RRQ "01"
+#define TFTP_OPCODE_WRQ "10"
 
-void print(char *);
-char * getrrq(char *);
+void print(const char *message);
+char *buildRRQRequest(const char *filename);
 
 #endif //CLIENTTFTP_GETTFTP_H

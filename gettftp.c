@@ -11,12 +11,12 @@
 /**
  * @brief Downloads a requested file from a specified host through arguments
  * User guide for getaddrinfo in official manual at >>> man getaddrinfo
- * @param argc
- * @param argv
+ * @param argc number of arguments
+ * @param *argv[] array of arguments
  * @return int returns 0 if successfully terminated
+ * Example of script call: ./gettftp localhost 1069 [filename]
  */
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     if (argc < 4) {
         // Error management
         fprintf(stderr, "Usage: %s host port filename\n", argv[0]);
@@ -29,8 +29,7 @@ int main(int argc, char *argv[])
 
     struct addrinfo hints;
     struct addrinfo *result, *rp;
-    int sfd, s, j;
-    size_t len;
+    int sfd, s;
     ssize_t nread;
     char buf[BUF_SIZE];
 
@@ -39,7 +38,7 @@ int main(int argc, char *argv[])
     hints.ai_family = AF_INET;    // Allow IPv4
     hints.ai_socktype = SOCK_DGRAM; // Datagram socket
     hints.ai_flags = 0;
-    hints.ai_protocol = IPPROTO_UDP;          // Any protocol
+    hints.ai_protocol = IPPROTO_UDP; // UDP protocol
 
     s = getaddrinfo(host, port, &hints, &result);
     if (s != 0) {
@@ -76,40 +75,81 @@ int main(int argc, char *argv[])
 
     freeaddrinfo(result); // No longer needed
 
-    if (DEBUG) print("Attempt to send filename to server\n");
-    // Send the file to the server through an RRQ request
-    if (write(sfd, getrrq(fileName), strlen(getrrq(fileName)) + 1) != strlen(fileName) + 1) {
+    // Send the file request to the server through an RRQ request
+    char *rrq_request = buildRRQRequest(fileName);
+    if (DEBUG) print("RRQ request written\n");
+
+    ssize_t sent_bytes = sendto(sfd, rrq_request, strlen(rrq_request) + 1, 0, rp->ai_addr, rp->ai_addrlen);
+    if (sent_bytes == -1) {
         // Error management
-        fprintf(stderr, "partial/failed write\n");
+        perror("sendto");
         exit(EXIT_FAILURE);
     }
+    if (DEBUG) print("RRQ request sent to server\n");
 
     // Receive the file content from the server
-    FILE *file = fopen(fileName, "w");
+    FILE *file = fopen(fileName, "wb");
     if (file == NULL) {
         // Error management
         perror("fopen");
         exit(EXIT_FAILURE);
     }
+    if (DEBUG) print("File to fill with requested content created at client\n");
 
-    if (DEBUG) print("Attempt to write of requested file from server in client directory\n");
-    while ((nread = read(sfd, buf, BUF_SIZE)) > 0) {
-        if (DEBUG) print("Receiving file content from server...\n");
-        if (fwrite(buf, sizeof(char), nread, file) != nread) {
-            // Error management
-            perror("fwrite");
-            exit(EXIT_FAILURE);
-        }
+    // Receive the initial response from the server
+    char response[BUF_SIZE];
+    struct sockaddr_storage client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+
+    if (DEBUG) print("Receiving initial response from server\n");
+    ssize_t nrecv = recvfrom(sfd, response, BUF_SIZE, 0, (struct sockaddr*)&client_addr, &client_addr_len);
+    if (DEBUG) {
+        print("Initial response received from server\n");
+        printf("Bytes received: %zd\n", nrecv);
     }
 
-    if (nread == -1) {
+    if (nrecv < 0) {
         // Error management
         perror("read");
         exit(EXIT_FAILURE);
     }
+    if (nrecv == 0) {
+        if (DEBUG) print("Server closed the connection\n");
+    }
 
-    if (DEBUG) print("File successfully downloaded to current directory\n");
-    fclose(file);
+    if (DEBUG) print("Checking received response\n");
+    // Check if the server acknowledged the request with options
+    if (strncmp(response, "tftp2", 5) == 0) {
+        if (DEBUG) print("Server acknowledged TFTP Protocol (Revision 2) request\n");
+
+        // Handle additional negotiation or proceed with data transfer
+        // ... (implement negotiation logic as needed)
+
+        // Continue with reading file content
+        while ((nrecv = read(sfd, response, BUF_SIZE)) > 0) {
+            if (DEBUG) {
+                print("Receiving file content from the server...\n");
+                printf("Received %zd bytes\n", nrecv);
+            }
+
+            if (fwrite(response, sizeof(char), nrecv, file) != nrecv) {
+                // Error management
+                perror("fwrite");
+                exit(EXIT_FAILURE);
+            }
+        }
+    } else {
+        // The server does not support TFTP Protocol (Revision 2)
+        if (DEBUG) print("Server does not support TFTP Protocol (Revision 2)\n");
+
+        // Handle the response as if it were a standard TFTP response
+        // ... (implement standard TFTP response handling)
+    }
+
+
+    if (DEBUG) print("File successfully downloaded to the current directory\n");
+    fclose(file); // Close the file descriptor
+    close(sfd);     // Close the socket
 
     exit(EXIT_SUCCESS);
 }
@@ -119,8 +159,8 @@ int main(int argc, char *argv[])
  * Has error management.
  * @param string string to print.
  */
-void print(char *string) {
-    if (write(STDOUT_FILENO, string, strlen(string)) == -1) { // Error management
+void print(const char *message) {
+    if (write(STDOUT_FILENO, message, strlen(message)) == -1) { // Error management
         perror("write");
         exit(EXIT_FAILURE);
     }
@@ -136,11 +176,26 @@ void print(char *string) {
  * @param filename file to request
  * @return RRQ request
  */
-char * getrrq(char * filename) {
-    char request[sizeof (RRQ_OPCODE_1) + sizeof (filename) + sizeof (RRQ_MODE) + 2];
+char *buildRRQRequest(const char *filename) {
+    // The size of the request is determined by the length of the opcode, filename, mode, option, and null terminators
+    size_t request_size = strlen(TFTP_OPCODE_RRQ) + strlen(filename) + strlen(TFTP_OCTET_MODE) + strlen("tftp2") + 4;
 
-    sprintf(request, "%s%s\0%s\0", RRQ_OPCODE_1, filename, RRQ_MODE);
-    print(request);
+    char *request = (char *)malloc(request_size);
+    if (request == NULL) {
+        perror("malloc");
+        exit(EXIT_FAILURE);
+    }
+
+    sprintf(request, "%s%s0%s0%s0", TFTP_OPCODE_RRQ, filename, TFTP_OCTET_MODE, "tftp2");
+
+    // Set opcode values
+    request[0] = '0';
+    request[1] = '1';
+
+    // Null terminate the filename, mode, and option
+    request[strlen(TFTP_OPCODE_RRQ) + strlen(filename)] = 0;
+    request[strlen(TFTP_OPCODE_RRQ) + strlen(filename) + strlen(TFTP_OCTET_MODE)] = 0;
+    request[request_size - 1] = 0;
 
     return request;
 }
